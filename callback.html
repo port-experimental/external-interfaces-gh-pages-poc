@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Port POC – callback</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Completing sign-in…</h1>
+  </header>
+
+  <div id="error" hidden></div>
+
+  <section class="card">
+    <h2>Log</h2>
+    <ul id="log" class="list"></ul>
+  </section>
+
+  <p><a href="./">← Back to start</a></p>
+
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script>
+    (async () => {
+      const p = new URLSearchParams(location.search);
+      if (p.get("error")) {
+        return showError(`Authorize error: ${p.get("error")} – ${p.get("error_description") || ""}`);
+      }
+
+      const code = p.get("code");
+      const state = p.get("state");
+      const pending = JSON.parse(sessionStorage.getItem("pkce") || "null");
+      sessionStorage.removeItem("pkce");
+
+      if (!code) {
+        return showError("No ?code in callback URL.");
+      }
+      if (!pending) {
+        return showError("No pending PKCE login in sessionStorage (page reloaded / different tab?). Start again from the start page.");
+      }
+      if (pending.state !== state) {
+        return showError("State mismatch – refusing to exchange code.");
+      }
+
+      log("Got authorization code, exchanging at https://" + C.AUTH0_DOMAIN + "/oauth/token from the browser…");
+
+      let r;
+      let body;
+      try {
+        r = await fetch(`https://${C.AUTH0_DOMAIN}/oauth/token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "authorization_code",
+            client_id: C.CLIENT_ID,
+            code,
+            redirect_uri: C.REDIRECT_URI,
+            code_verifier: pending.verifier,
+          }),
+        });
+        body = await r.json().catch(() => ({}));
+      } catch (e) {
+        return showError("Token exchange network/CORS failure: " + e.message + " (Auth0 Allowed Web Origins may not include this origin)");
+      }
+
+      if (!r.ok) {
+        return showError(`Token exchange HTTP ${r.status}: ${body.error} – ${body.error_description || ""}`);
+      }
+
+      sessionStorage.setItem("tokens", JSON.stringify(body));
+      log("Token exchange OK (no client secret used). Redirecting…", "ok");
+      history.replaceState(null, "", location.pathname);
+      location.replace(C.BASE_URL);
+    })();
+  </script>
+</body>
+</html>

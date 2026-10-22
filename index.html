@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Port External Interfaces – static POC</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "./vendor/jsx-shim.js",
+        "react/jsx-runtime": "./vendor/jsx-shim.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header>
+    <h1>Port External Interfaces</h1>
+    <p class="subtitle">Frontend-only POC: no backend, no client secret.</p>
+    <p class="flow">
+      PKCE (S256) → <code id="authdomain"></code> → token exchange from the browser → <code id="apibase"></code> as the signed-in user
+    </p>
+  </header>
+
+  <div id="error" hidden></div>
+
+  <section id="config-card" class="card">
+    <h2>App configuration</h2>
+    <dl class="fields">
+      <dt>Region</dt>
+      <dd><code id="region"></code></dd>
+      <dt>Client ID</dt>
+      <dd><code id="clientid"></code></dd>
+      <dt>Redirect URI</dt>
+      <dd><code id="redirecturi"></code></dd>
+    </dl>
+
+    <form id="configure">
+      <label>
+        Client ID
+        <input id="cfg_client_id" placeholder="clientId from the Port MCP" required>
+      </label>
+      <label>
+        Region
+        <select id="cfg_region">
+          <option value="us">US</option>
+          <option value="eu">EU</option>
+        </select>
+      </label>
+      <button type="submit" class="secondary">Use this app</button>
+    </form>
+  </section>
+
+  <section id="signedout" class="card">
+    <h2>Sign in</h2>
+    <button id="login">Sign in with Port</button>
+  </section>
+
+  <div id="signedin" hidden>
+    <div class="section-head">
+      <h2>Who am I</h2>
+      <button id="logout" class="secondary">Sign out</button>
+    </div>
+    <div id="user-cards" class="card-grid"></div>
+
+    <div class="section-head">
+      <h2>Blueprints visible to me <span id="bp-count" class="pill"></span></h2>
+      <small class="muted">GET /v1/blueprints</small>
+    </div>
+    <div id="blueprints" class="bp-grid"></div>
+  </div>
+
+  <dialog id="bp-dialog" class="bp-dialog">
+    <div id="bp-detail"></div>
+  </dialog>
+
+  <dialog id="json-dialog">
+    <div class="card-head">
+      <h3 id="json-title"></h3>
+      <button class="secondary" onclick="this.closest('dialog').close()">Close</button>
+    </div>
+    <pre id="json-body"></pre>
+  </dialog>
+
+  <section class="card">
+    <h2>Log</h2>
+    <ul id="log" class="list"></ul>
+  </section>
+
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script src="icons.js"></script>
+  <script>
+    function showRegion(region) {
+      const r = C.REGIONS[region];
+      $("authdomain").textContent = r.AUTH0_DOMAIN;
+      $("apibase").textContent = r.PORT_API_BASE;
+      $("region").textContent = region.toUpperCase();
+    }
+
+    showRegion(C.REGION);
+    $("clientid").textContent = C.CLIENT_ID || "(not set)";
+    $("redirecturi").textContent = C.REDIRECT_URI;
+
+    $("cfg_client_id").value = C.CLIENT_ID;
+    $("cfg_region").value = C.REGION;
+    $("cfg_region").onchange = (e) => showRegion(e.target.value);
+    $("configure").onsubmit = (e) => {
+      e.preventDefault();
+      sessionStorage.removeItem("tokens");
+      const q = new URLSearchParams({
+        client_id: $("cfg_client_id").value.trim(),
+        region: $("cfg_region").value,
+      });
+      location.href = C.BASE_URL + "?" + q;
+    };
+
+    $("login").disabled = !C.CLIENT_ID;
+    $("login").onclick = startLogin;
+    $("logout").onclick = signOut;
+    document.querySelectorAll("dialog").forEach((dialog) => {
+      dialog.onclick = (e) => {
+        const r = dialog.getBoundingClientRect();
+        const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+        if (e.target === dialog && !inside) {
+          dialog.close(); // click on the backdrop
+        }
+      };
+    });
+
+    if (sessionStorage.getItem("tokens")) {
+      $("config-card").hidden = true;
+      $("signedout").hidden = true;
+    }
+
+    renderSignedIn().then((ok) => {
+      if (ok) {
+        return;
+      }
+      if (C.CLIENT_ID) {
+        log("Not signed in. Click 'Sign in with Port'.");
+      } else {
+        log("No client id configured. Enter the clientId of your External Interface app above.");
+      }
+    });
+  </script>
+</body>
+</html>
